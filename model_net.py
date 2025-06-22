@@ -1,23 +1,22 @@
 import math
-
 import torch
 from torch import nn
 from torchsummary import summary
 
 
-# 定义Residual块
+# Define Residual block
 class Residual(nn.Module):
-    # input_channels:输入通道数；num_channels:输出通道数；use_1conv:是否使用1*1的卷积；strides:默认步幅为1
+    # input_channels: input channels; num_channels: output channels; use_1conv: whether to use 1x1 convolution; strides: default stride is 1
     def __init__(self, input_channels, num_channels, use_1conv=False, strides=1):
         super(Residual, self).__init__()
         self.relu = nn.ReLU()
-        # 若该卷积层使用1*1的卷积，则会将该层的stride和1*1的卷积的步幅设置为2
+        # If using 1x1 convolution, set stride of this layer and 1x1 convolution to 2
         self.conv1 = nn.Conv2d(in_channels=input_channels, out_channels=num_channels, kernel_size=3, padding=1,
                                stride=strides)
         self.conv2 = nn.Conv2d(in_channels=num_channels, out_channels=num_channels, kernel_size=3, padding=1)
-        self.bn1 = nn.BatchNorm2d(num_channels)  # 批量规范化
+        self.bn1 = nn.BatchNorm2d(num_channels)  # Batch normalization
         self.bn2 = nn.BatchNorm2d(num_channels)
-        # 判断在残差块的右边是否使用1*1的卷积，若使用时将其步幅设置为2
+        # Determine whether to use 1x1 convolution on the right side of residual block, set stride to 2 if used
         if use_1conv:
             self.conv3 = nn.Conv2d(in_channels=input_channels, out_channels=num_channels, kernel_size=1, stride=strides)
         else:
@@ -57,7 +56,7 @@ class ResNet18(nn.Module):
                                 nn.Flatten(),
                                 nn.Linear(256, 8))
 
-        # 参数太大，不好训练，真实参数为 ↓
+        # Original parameters were too large for training, real parameters are ↓
         # self.b5 = nn.Sequential(Residual(256, 512, use_1conv=True, strides=2),
         #                         Residual(512, 512, use_1conv=False, strides=1))
         #
@@ -73,34 +72,36 @@ class ResNet18(nn.Module):
         x = self.b5(x)
         x = self.b6(x)
         return x
+
+
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
         self.layer1 = nn.Sequential(
-            nn.Conv2d(3, 16, kernel_size=5, padding=2),  # 输入: (3, 224, 224), 输出: (16, 224, 224)
+            nn.Conv2d(3, 16, kernel_size=5, padding=2),  # Input: (3, 224, 224), Output: (16, 224, 224)
             nn.BatchNorm2d(16),
             nn.ReLU(),
-            nn.MaxPool2d(2)  # 输出: (16, 112, 112)
+            nn.MaxPool2d(2)  # Output: (16, 112, 112)
         )
         self.layer2 = nn.Sequential(
-            nn.Conv2d(16, 32, kernel_size=5, padding=2),  # 输入: (16, 112, 112), 输出: (32, 112, 112)
+            nn.Conv2d(16, 32, kernel_size=5, padding=2),  # Input: (16, 112, 112), Output: (32, 112, 112)
             nn.BatchNorm2d(32),
             nn.ReLU(),
-            nn.MaxPool2d(2)  # 输出: (32, 56, 56)
+            nn.MaxPool2d(2)  # Output: (32, 56, 56)
         )
-        self.fc = nn.Linear(32 * 56 * 56, 8)  # 输入: 32 * 56 * 56, 输出: 8
+        self.fc = nn.Linear(32 * 56 * 56, 8)  # Input: 32 * 56 * 56, Output: 8
 
     def forward(self, x):
-        x = self.layer1(x)  # 输出: (batch_size, 16, 112, 112)
-        x = self.layer2(x)  # 输出: (batch_size, 32, 56, 56)
-        x = x.view(x.size(0), -1)  # 展平: (batch_size, 32 * 56 * 56)
-        x = self.fc(x)  # 输出: (batch_size, 8)
+        x = self.layer1(x)  # Output: (batch_size, 16, 112, 112)
+        x = self.layer2(x)  # Output: (batch_size, 32, 56, 56)
+        x = x.view(x.size(0), -1)  # Flatten: (batch_size, 32 * 56 * 56)
+        x = self.fc(x)  # Output: (batch_size, 8)
         return x
 
 
-# 定义基础残差块
+# Define basic residual block
 class BasicBlock(nn.Module):
-    expansion = 1  # 扩展系数
+    expansion = 1  # Expansion factor
 
     def __init__(self, inplanes, planes, stride=1, downsample=None):
         super(BasicBlock, self).__init__()
@@ -130,28 +131,29 @@ class BasicBlock(nn.Module):
 
         return out
 
-# 定义简化后的 ResNet2
+
+# Define simplified ResNet2
 class ResNet2(nn.Module):
     def __init__(self, block, layers, num_classes=8):
-        self.inplanes = 16  # 减少初始通道数
+        self.inplanes = 16  # Reduce initial channels
         super(ResNet2, self).__init__()
         # 1. conv1
-        self.conv1 = nn.Conv2d(3, 16, kernel_size=7, stride=2, padding=3, bias=False)  # 减少通道数
+        self.conv1 = nn.Conv2d(3, 16, kernel_size=7, stride=2, padding=3, bias=False)  # Reduce channels
         self.bn1 = nn.BatchNorm2d(16)
         self.relu = nn.ReLU(inplace=True)
         # 2. conv2_x
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        self.layer1 = self._make_layer(block, 16, layers[0])  # 减少通道数
+        self.layer1 = self._make_layer(block, 16, layers[0])  # Reduce channels
         # 3. conv3_x
-        self.layer2 = self._make_layer(block, 32, layers[1], stride=2)  # 减少通道数
+        self.layer2 = self._make_layer(block, 32, layers[1], stride=2)  # Reduce channels
         # 4. conv4_x
-        self.layer3 = self._make_layer(block, 64, layers[2], stride=2)  # 减少通道数
-        # 5. 移除 conv5_x（layer4）
+        self.layer3 = self._make_layer(block, 64, layers[2], stride=2)  # Reduce channels
+        # 5. Remove conv5_x (layer4)
 
-        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))  # 自适应池化，适用于任意输入尺寸
-        self.fc = nn.Linear(64 * block.expansion, num_classes)  # 减少全连接层输入维度
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))  # Adaptive pooling for any input size
+        self.fc = nn.Linear(64 * block.expansion, num_classes)  # Reduce FC layer input dimension
 
-        # 初始化权重
+        # Initialize weights
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
@@ -170,7 +172,7 @@ class ResNet2(nn.Module):
 
         layers = []
         layers.append(block(self.inplanes, planes, stride, downsample))
-        self.inplanes = planes * block.expansion  # 更新 self.inplanes
+        self.inplanes = planes * block.expansion  # Update self.inplanes
         for _ in range(1, blocks):
             layers.append(block(self.inplanes, planes))
 
@@ -187,14 +189,15 @@ class ResNet2(nn.Module):
         x = self.layer3(x)
 
         x = self.avgpool(x)
-        x = x.view(x.size(0), -1)  # 将输出结果展成一行
+        x = x.view(x.size(0), -1)  # Flatten output
         x = self.fc(x)
 
         return x
 
-# 创建简化后的 ResNet2 模型
+
+# Create simplified ResNet2 model
 def resnet2_simple(num_classes=8):
-    return ResNet2(BasicBlock, [1, 1, 1], num_classes)  # 减少每个阶段的残差块数量
+    return ResNet2(BasicBlock, [1, 1, 1], num_classes)  # Reduce number of residual blocks per stage
 
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
