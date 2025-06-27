@@ -197,9 +197,9 @@ def train_model_process(model, train_loader, val_loader, test_loader, num_epochs
         print(f'Test Loss: {test_loss:.4f} Acc: {test_acc:.4f}')
 
         # Save best model (unchanged)
-        if val_acc > best_acc:
-            best_acc = val_acc
-            torch.save(model.state_dict(), './model_save/best_model_resnet34.pth')
+        # if val_acc > best_acc:
+        #     best_acc = val_acc
+        #     torch.save(model.state_dict(), './model_save/best_model_resnet34.pth')
 
         scheduler.step()
 
@@ -235,6 +235,8 @@ def plot_training_history(history):
     plt.legend()
 
     plt.tight_layout()
+    if not os.path.exists('Output'):
+        os.makedirs('Output')
     plt.savefig('Output/training_curve.png')
     plt.show()
 
@@ -249,8 +251,8 @@ if __name__ == '__main__':
     model.fc = nn.Linear(num_ftrs, num_classes)
 
     # Data paths
-    data_dir = 'dataset_train'  # Replace with your data path
-    test_dir = 'classification-gray'
+    data_dir = 'classification-gray'  # Replace with your data path
+    test_dir = 'classification-jiguang'
     # Data loading
     train_loader, val_loader = train_val_data_process(data_dir)
     test_loader = test_get(test_dir)
