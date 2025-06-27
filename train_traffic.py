@@ -196,7 +196,7 @@ def train_model_process(model, train_loader, val_loader, test_loader, num_epochs
         print(f'Val Loss: {val_loss:.4f} Acc: {val_acc:.4f}')
         print(f'Test Loss: {test_loss:.4f} Acc: {test_acc:.4f}')
 
-        # Save best model (unchanged)
+
         # if val_acc > best_acc:
         #     best_acc = val_acc
         #     torch.save(model.state_dict(), './model_save/best_model_resnet34.pth')
@@ -204,6 +204,8 @@ def train_model_process(model, train_loader, val_loader, test_loader, num_epochs
         scheduler.step()
 
     # Save training history (unchanged)
+    if not os.path.exists('Output'):
+        os.makedirs('Output')
     history_df = pd.DataFrame(history)
     history_df.to_csv('Output/training_history.csv', index=False)
 
@@ -235,8 +237,6 @@ def plot_training_history(history):
     plt.legend()
 
     plt.tight_layout()
-    if not os.path.exists('Output'):
-        os.makedirs('Output')
     plt.savefig('Output/training_curve.png')
     plt.show()
 
