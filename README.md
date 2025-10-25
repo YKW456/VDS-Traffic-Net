@@ -40,3 +40,5 @@ python train_vds.py
 
 python train_traffic.py
 
+Revised in October 2025: The logic for generating interference light sources has been modified, and the new code can be found in the folder 'Create_new_dataset'.
+
