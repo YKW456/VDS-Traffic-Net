@@ -280,31 +280,22 @@ def generate_6th_x_rotation_video():
 
 
     try:
-        # 调用第六个函数
+
         generate_6th_x_axis_rotation_sequence(
             image_path=input_image,
             output_dir=output_dir
         )
 
-        print("✅ 第六个功能：绕X轴旋转序列生成完成！")
-        print(f"📁 输出目录: {output_dir}")
-        print("📊 生成统计:")
-        print("   - 总图片数: 60张")
-        print("   - 基础图片: test6.jpg")
-        print("   - 旋转轴: X轴")
-        print("   - 旋转角度: 0°到75°")
-        print("   - 旋转效果: 从正面视角到俯视角度")
-        print("   - 透视变换: 三维旋转透视效果")
 
     except Exception as e:
-        print(f"❌ 生成第六个功能时出错: {str(e)}")
+        print(f"❌ error: {str(e)}")
 
 
 
 
 
 def main():
-    """主函数 - 交互式菜单"""
+
     generate_5th_moving_lights_video()
     # generate_6th_x_rotation_video()
 
