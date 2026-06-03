@@ -18,18 +18,18 @@ from model_net import *
 
 def create_resnet34_pretrained(num_classes):
     """
-    创建ResNet34预训练模型
+    Build pretrained ResNet34 model
 
     Args:
-        num_classes: 输出类别数
+        num_classes: number of output classification categories
 
     Returns:
-        torch.nn.Module: ResNet34模型
+        torch.nn.Module: constructed ResNet34 network instance
     """
-    # 加载预训练的ResNet34模型
+    # Load official ImageNet pretrained ResNet34 backbone
     model = models.resnet34(pretrained=True)
 
-    # 修改最后一层以适应我们的类别数
+    # Replace final fully-connected layer to match target category quantity
     num_features = model.fc.in_features
     model.fc = nn.Linear(num_features, num_classes)
 
@@ -40,12 +40,13 @@ class CustomImageDataset(Dataset):
     def __init__(self, root_dir, transform=None):
         self.root_dir = root_dir
         self.transform = transform
-        # Sort by numeric value instead of string to get correct order: 0,1,2,...,45
+        # Sort folder name by numeric value instead of string sorting: 0,1,2,...,45
         self.classes = sorted(os.listdir(root_dir), key=lambda x: int(x) if x.isdigit() else float('inf'))
         self.class_to_idx = {cls_name: idx for idx, cls_name in enumerate(self.classes)}
         self.images = self._load_images()
 
     def _load_images(self):
+        """Traverse dataset folder to collect image path and corresponding label"""
         images = []
         for cls_name in self.classes:
             cls_dir = os.path.join(self.root_dir, cls_name)
@@ -58,9 +59,11 @@ class CustomImageDataset(Dataset):
         return images
 
     def __len__(self):
+        """Return total quantity of dataset samples"""
         return len(self.images)
 
     def __getitem__(self, idx):
+        """Fetch single sample by index: read image + corresponding label"""
         img_path, label = self.images[idx]
         image = Image.open(img_path).convert('RGB')
         if self.transform:
@@ -69,29 +72,29 @@ class CustomImageDataset(Dataset):
 
 
 def split_dataset(dataset, train_classes):
-    """Split dataset based on classes with 9:1:1 ratio (train:val:test)"""
-    # Get all indices for the specified classes
+    """Split dataset into train/val/test with 9:1:1 proportion"""
+    # Collect all sample indices belonging to specified training categories
     all_indices = [i for i, (_, label) in enumerate(dataset.images) if label in train_classes]
     
-    # First split: 90% for train+val, 10% for test
+    # First split: 90% for train+validation set, remaining 10% for test set
     train_val_indices, test_indices = train_test_split(
         all_indices,
-        test_size=0.1,  # 10% for test
+        test_size=0.1,  # Reserve 10% data as test set
         random_state=42,
-        stratify=[dataset.images[i][1] for i in all_indices]  # Stratify by class
+        stratify=[dataset.images[i][1] for i in all_indices]  # Stratified sampling to keep class distribution
     )
     
-    # Second split: from the 90%, split into 90% train and 10% val
-    # This gives us final ratio of 81% train, 9% val, 10% test
-    # To get exactly 9:1:1, we need to adjust the split
+    # Secondary split: divide the 90% subset into train and validation
+    # Final proportion: Train=81%, Val=9%, Test=10% (overall 9:1:1)
+    # test_size=0.1111 ≈ 1/9, split 10% out of 90% for validation
     train_indices, val_indices = train_test_split(
         train_val_indices,
-        test_size=0.1111,  # 10/90 = 0.1111 to get 9:1 ratio from the remaining 90%
+        test_size=0.1111,
         random_state=42,
         stratify=[dataset.images[i][1] for i in train_val_indices]
     )
     
-    # Create subsets
+    # Construct subset dataset objects based on split indices
     train_data = Subset(dataset, train_indices)
     val_data = Subset(dataset, val_indices)
     test_data = Subset(dataset, test_indices)
@@ -105,6 +108,7 @@ def split_dataset(dataset, train_classes):
 
 
 def create_dataloaders(train_data, val_data, test_data, batch_size=32):
+    """Build DataLoader for train/validation/test dataset"""
     train_dataloader = DataLoader(
         dataset=train_data,
         batch_size=batch_size,
@@ -128,10 +132,12 @@ def create_dataloaders(train_data, val_data, test_data, batch_size=32):
 
 def train_model_process(model, train_dataloader, val_dataloader, test_dataloader,
                         num_epochs, optimizer, criterion, device, scheduler=None):
+    """Full model training pipeline: train + validate + periodic test, save best checkpoint"""
     model = model.to(device)
     best_model_wts = copy.deepcopy(model.state_dict())
     best_acc = 0.0
 
+    # Lists to record loss & accuracy changes per epoch
     train_loss_all = []
     val_loss_all = []
     train_acc_all = []
@@ -144,7 +150,7 @@ def train_model_process(model, train_dataloader, val_dataloader, test_dataloader
         print(f"Epoch {epoch}/{num_epochs - 1}")
         print("-" * 10)
 
-        # Training phase
+        # Train stage: enable dropout & BN training mode
         model.train()
         train_loss = 0.0
         train_corrects = 0
@@ -161,15 +167,17 @@ def train_model_process(model, train_dataloader, val_dataloader, test_dataloader
             loss.backward()
             optimizer.step()
 
+            # Accumulate total loss and correct prediction count
             train_loss += loss.item() * b_x.size(0)
             train_corrects += torch.sum(pre_lab == b_y.data)
             train_num += b_x.size(0)
 
+        # Update learning rate if scheduler is assigned
         if scheduler:
             scheduler.step()
             print(f"Current LR: {scheduler.get_last_lr()}")
 
-        # Validation phase
+        # Validation stage: disable gradient computation, eval mode
         model.eval()
         val_loss = 0.0
         val_corrects = 0
@@ -186,11 +194,11 @@ def train_model_process(model, train_dataloader, val_dataloader, test_dataloader
                 val_corrects += torch.sum(pre_lab == b_y.data)
                 val_num += b_x.size(0)
 
-        # Testing phase
+        # Calculate test set accuracy after each epoch
         test_acc = test_model(model, test_dataloader, device)
         test_acc_all.append(test_acc)
 
-        # Calculate metrics
+        # Calculate average loss and accuracy of current epoch
         train_loss_all.append(train_loss / train_num)
         train_acc_all.append(train_corrects.double().item() / train_num)
         val_loss_all.append(val_loss / val_num)
@@ -200,7 +208,7 @@ def train_model_process(model, train_dataloader, val_dataloader, test_dataloader
         print(f"{epoch} Val Loss: {val_loss_all[-1]:.4f} Acc: {val_acc_all[-1]:.4f}")
         print(f"{epoch} Test Acc: {test_acc:.4f}")
 
-        # Save best model
+        # Update best checkpoint when validation accuracy is improved
         if val_acc_all[-1] > best_acc:
             best_acc = val_acc_all[-1]
             best_model_wts = copy.deepcopy(model.state_dict())
@@ -208,7 +216,7 @@ def train_model_process(model, train_dataloader, val_dataloader, test_dataloader
         time_use = time.time() - since
         print(f"Time elapsed: {time_use // 60:.0f}m {time_use % 60:.0f}s")
 
-    # Save results
+    # Wrap training log into DataFrame for file saving
     train_process = pd.DataFrame({
         "epoch": range(num_epochs),
         "train_loss": train_loss_all,
@@ -222,6 +230,7 @@ def train_model_process(model, train_dataloader, val_dataloader, test_dataloader
 
 
 def test_model(model, test_dataloader, device):
+    """Evaluate model on test set and return overall accuracy (%)"""
     model.eval()
     correct = 0
     total = 0
@@ -236,7 +245,7 @@ def test_model(model, test_dataloader, device):
 
 
 def generate_test_predictions_table(model, test_dataloader, dataset, device, class_names):
-    """Generate detailed predictions table for test set"""
+    """Generate CSV-form detailed prediction table containing image path, true label, pred label and confidence"""
     model.eval()
     
     predictions = []
@@ -255,12 +264,12 @@ def generate_test_predictions_table(model, test_dataloader, dataset, device, cla
             true_labels.extend(b_y.cpu().numpy())
             confidences.extend(confidence.cpu().numpy())
     
-    # Get image paths for test samples
+    # Fetch original file path for each test sample
     test_indices = test_dataloader.dataset.indices
     for idx in test_indices:
         image_paths.append(dataset.images[idx][0])
     
-    # Create detailed results table
+    # Assemble full prediction result table
     results_table = pd.DataFrame({
         'Image_Path': image_paths,
         'True_Label_Index': true_labels,
@@ -275,33 +284,33 @@ def generate_test_predictions_table(model, test_dataloader, dataset, device, cla
 
 
 def main():
-    # Data preprocessing
+    # Data augmentation & normalization pipeline consistent with ImageNet
     transform = transforms.Compose([
         transforms.Resize(224),
         transforms.ToTensor(),
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ])
 
-    # Load full dataset
+    # Initialize full dataset from root folder
     full_dataset = CustomImageDataset(root_dir='jiguang', transform=transform)
 
     print(f"Total dataset size: {len(full_dataset)}")
     print(f"Number of classes: {len(full_dataset.classes)}")
     print(f"Classes: {full_dataset.classes}")
 
-    # Define training classes (all classes for first phase training)
-    train_classes = [i for i in range(len(full_dataset.classes))]  # All classes
+    # Select all categories for training in this experiment
+    train_classes = [i for i in range(len(full_dataset.classes))]
     print(f"Training classes: {train_classes}")
 
-    # Split dataset with 9:1:1 ratio
+    # Execute dataset split with fixed 9:1:1 ratio
     train_data, val_data, test_data = split_dataset(full_dataset, train_classes)
 
-    # Create dataloaders with smaller batch size to avoid memory issues
+    # Instantiate DataLoader, reduce batchsize to avoid out-of-memory error
     train_loader, val_loader, test_loader = create_dataloaders(
-        train_data, val_data, test_data, batch_size=32  # Reduced from 128 to 32
+        train_data, val_data, test_data, batch_size=32
     )
 
-    # Initialize model and training components
+    # Configure computing device: prefer CUDA if available
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
@@ -310,35 +319,35 @@ def main():
     print(f"ResNet34 pretrained model created with {num_classes} output classes")
     criterion = nn.CrossEntropyLoss()
 
-    # Training parameters (same as train_vds.py)
+    # Hyperparameter configuration for non-EWC training experiment
     print("=== Starting Training (No EWC) ===")
     optimizer = torch.optim.Adam(model.parameters(), lr=0.00002)
     scheduler = MultiStepLR(optimizer, milestones=[10, 20], gamma=0.5)
 
-    # Train the model
+    # Launch training workflow
     train_results, best_model_wts = train_model_process(
         model, train_loader, val_loader, test_loader,
         num_epochs = 30, optimizer=optimizer, criterion=criterion,
         device=device, scheduler=scheduler
     )
 
-    # Load best model for final evaluation
+    # Load optimal checkpoint for final inference
     model.load_state_dict(best_model_wts)
 
-    # Save the best model
+    # Persist best model weight and training log to disk
     torch.save(best_model_wts, "./model_save/train_vds_no_ewc_best_model.pth")
     train_results.to_csv("./model_save/train_vds_no_ewc_results.csv", index=False)
 
-    # Generate detailed test predictions table
+    # Generate full test-set prediction detail table
     print("=== Generating Test Predictions Table ===")
     test_predictions_table = generate_test_predictions_table(
         model, test_loader, full_dataset, device, full_dataset.classes
     )
 
-    # Save test predictions table
+    # Save test prediction result into CSV file
     test_predictions_table.to_csv("./model_save/test_predictions_table.csv", index=False)
 
-    # Print summary statistics
+    # Calculate global test-set accuracy statistics
     total_test_samples = len(test_predictions_table)
     correct_predictions = test_predictions_table['Correct'].sum()
     accuracy = correct_predictions / total_test_samples * 100
@@ -348,7 +357,7 @@ def main():
     print(f"Correct predictions: {correct_predictions}")
     print(f"Test accuracy: {accuracy:.2f}%")
 
-    # Class-wise accuracy
+    # Calculate per-category test accuracy
     print(f"\n=== Class-wise Test Accuracy ===")
     for class_idx, class_name in enumerate(full_dataset.classes):
         class_samples = test_predictions_table[test_predictions_table['True_Label_Index'] == class_idx]
@@ -356,7 +365,7 @@ def main():
             class_accuracy = class_samples['Correct'].sum() / len(class_samples) * 100
             print(f"Class {class_idx} ({class_name}): {class_accuracy:.2f}% ({class_samples['Correct'].sum()}/{len(class_samples)})")
 
-    # Plot training results
+    # Plot loss & accuracy training curves
     plt.figure(figsize=(15, 5))
 
     plt.subplot(1, 2, 1)
@@ -380,6 +389,7 @@ def main():
     plt.savefig('./model_save/training_curves.png', dpi=300, bbox_inches='tight')
     plt.show()
 
+    # Output saved file paths
     print(f"\n=== Files Saved ===")
     print(f"Model: ./model_save/train_vds_no_ewc_best_model.pth")
     print(f"Training results: ./model_save/train_vds_no_ewc_results.csv")
@@ -388,6 +398,7 @@ def main():
 
 
 if __name__ == '__main__':
+    # Create output folders automatically if not exist
     os.makedirs("./model_save", exist_ok=True)
     os.makedirs("./data_save", exist_ok=True)
     main()
